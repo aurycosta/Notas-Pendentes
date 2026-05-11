@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Painel de Notas Pendentes</title>
+  <link rel="stylesheet" href="style.css"/>
+
+  <!-- Bibliotecas via CDN (funciona no Live Server / internet) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img class="logo" src="logo.jpg" alt="logos"/>
+    <div>
+      <div class="title">Painel de Notas Pendentes</div>
+      <div class="subtitle">Importe o XLSX, filtre por loja/status e exporte PDF/PNG</div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="painel">
+  <section class="controls card">
+    <div class="row">
+      <label class="file">
+        <input type="file" id="fileInput" accept=".xlsx"/>
+        <span>📂 Importar XLSX</span>
+      </label>
+
+      <div class="field">
+        <label>Loja destino</label>
+        <select id="filtroLoja">
+          <option value="">Todas as lojas</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Status</label>
+        <select id="filtroStatus">
+          <option value="">Todos</option>
+          <option value="ok">✅ OK (0–1 dia)</option>
+          <option value="alerta">⚠️ Alerta (2–3 dias)</option>
+          <option value="vencido">❌ Vencido (4+ dias)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Data de referência</label>
+        <input type="date" id="dataRef"/>
+      </div>
+
+      <div class="field">
+        <label>Pesquisar</label>
+        <input type="text" id="busca" placeholder="NF-e, origem, destino..."/>
+      </div>
+    </div>
+
+    <div class="row actions">
+      <button id="btnPng">🖼️ Exportar PNG do painel</button>
+      <button id="btnPdfLoja">📄 Exportar PDF (loja filtrada)</button>
+      <button id="btnPdfTudo">📄 Exportar PDF (consolidado)</button>
+      <button id="btnCopiarMsg">📲 Copiar mensagem de cobrança</button>
+    </div>
+
+    <div class="row message">
+      <textarea id="msg" rows="3" readonly></textarea>
+    </div>
+  </section>
+
+  <section class="kpis">
+    <div class="card kpi">
+      <div class="kpiLabel">Total filtrado</div>
+      <div class="kpiValue">R$ <span id="totalValor">0,00</span></div>
+    </div>
+    <div class="card kpi">
+      <div class="kpiLabel">Qtde (filtrado)</div>
+      <div class="kpiValue"><span id="totalQtde">0</span></div>
+    </div>
+    <div class="card kpi ok">
+      <div class="kpiLabel">OK</div>
+      <div class="kpiValue"><span id="qtdeOk">0</span></div>
+    </div>
+    <div class="card kpi alerta">
+      <div class="kpiLabel">Alerta</div>
+      <div class="kpiValue"><span id="qtdeAlerta">0</span></div>
+    </div>
+    <div class="card kpi vencido">
+      <div class="kpiLabel">Vencido</div>
+      <div class="kpiValue"><span id="qtdeVencido">0</span></div>
+    </div>
+  </section><section class="card">
+    <div class="tableHead">
+      <div class="cardTitle">Notas</div>
+      <div class="hint">Clique em uma linha para ver detalhes</div>
+    </div>
+    <div class="tableWrap">
+      <table id="tabela">
+        <thead>
+          <tr>
+            <th>Origem</th>
+            <th>Destino</th>
+            <th>Razão Social</th>
+            <th>NF-e</th>
+            <th>Série</th>
+            <th>Chave Acesso</th>
+            <th>Data Emissão</th>
+            <th>Dias</th>
+            <th>Status</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+
+  <section class="grid2">
+    <div class="card">
+      <div class="cardTitle">📊 Status (quantidade)</div>
+      <canvas id="chartQtd" height="120"></canvas>
+    </div>
+    <div class="card">
+      <div class="cardTitle">📊 Status (valor)</div>
+      <canvas id="chartValor" height="120"></canvas>
+    </div>
+  </section>
+
+  
+
+</main>
+
+<!-- Modal detalhes -->
+<div class="modal" id="modal">
+  <div class="modalCard">
+    <div class="modalHead">
+      <div class="modalTitle">Detalhes da Nota</div>
+      <button id="btnFechar">✖</button>
+    </div>
+    <pre id="detalhes"></pre>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
