@@ -6,7 +6,6 @@
   <title>Painel de Notas Pendentes</title>
   <link rel="stylesheet" href="style.css"/>
 
-  <!-- Bibliotecas via CDN (funciona no Live Server / internet) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -61,10 +60,11 @@
     </div>
 
     <div class="row actions">
-      <button id="btnPng">🖼️ Exportar PNG do painel</button>
-      <button id="btnPdfLoja">📄 Exportar PDF (loja filtrada)</button>
-      <button id="btnPdfTudo">📄 Exportar PDF (consolidado)</button>
-      <button id="btnCopiarMsg">📲 Copiar mensagem de cobrança</button>
+      <button id="btnPng">🖼️ Exportar PNG</button>
+      <button id="btnPdfLoja">📄 Exportar PDF (loja)</button>
+      <button id="btnPdfTudo">📄 Exportar PDF (geral)</button>
+      <button id="btnCopiarMsg">📲 Mensagem de cobrança</button>
+      <button id="btnVerHistorico" style="background:#0b5ed7;">📅 Ver Histórico de Importações</button>
     </div>
 
     <div class="row message">
@@ -93,10 +93,12 @@
       <div class="kpiLabel">Vencido</div>
       <div class="kpiValue"><span id="qtdeVencido">0</span></div>
     </div>
-  </section><section class="card">
+  </section>
+
+  <section class="card">
     <div class="tableHead">
-      <div class="cardTitle">Notas</div>
-      <div class="hint">Clique em uma linha para ver detalhes</div>
+      <div class="cardTitle">Notas Cadastradas</div>
+      <div class="hint">Os dados ficam salvos automaticamente. Dê F5 sem medo!</div>
     </div>
     <div class="tableWrap">
       <table id="tabela">
@@ -107,18 +109,16 @@
             <th>Razão Social</th>
             <th>NF-e</th>
             <th>Série</th>
-            <th>Chave Acesso</th>
-            <th>Data Emissão</th>
+            <th>Emissão</th>
             <th>Dias</th>
             <th>Status</th>
-            <th>Valor</th>
+            <th>Recorrência</th> <th>Valor</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
     </div>
   </section>
-
 
   <section class="grid2">
     <div class="card">
@@ -130,12 +130,41 @@
       <canvas id="chartValor" height="120"></canvas>
     </div>
   </section>
-
-  
-
 </main>
 
-<!-- Modal detalhes -->
+<main class="wrap" id="telaHistorico" style="display:none;">
+  <section class="card">
+    <div class="tableHead">
+      <div class="cardTitle" style="font-size: 20px;">Histórico Completo de Importações</div>
+      <button id="btnVoltarPainel" class="actionBtn" style="background:#111827; color:#fff; border:none; padding:10px 14px; border-radius:10px; cursor:pointer;">⬅ Voltar ao Painel Atual</button>
+    </div>
+    <p style="font-size: 14px; color: #6b7280; margin-top: 0;">Selecione uma data na lista para auditar as notas que estavam pendentes naquele dia específico.</p>
+    
+    <div class="layoutHistorico">
+       <div class="listaDatas">
+          <h4>Datas Salvas</h4>
+          <ul id="ulHistoricoDatas"></ul>
+       </div>
+       <div class="detalhesData">
+          <h4 id="tituloDetalheHist">Selecione uma importação na lista...</h4>
+          <div class="tableWrap" style="max-height: 50vh;">
+             <table id="tabelaDetHist">
+               <thead>
+                 <tr>
+                    <th style="text-align:left;">Origem</th>
+                    <th style="text-align:left;">Destino</th>
+                    <th style="text-align:left;">NF-e</th>
+                    <th style="text-align:right;">Valor</th>
+                 </tr>
+               </thead>
+               <tbody></tbody>
+             </table>
+          </div>
+       </div>
+    </div>
+  </section>
+</main>
+
 <div class="modal" id="modal">
   <div class="modalCard">
     <div class="modalHead">
@@ -146,6 +175,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
