@@ -250,32 +250,42 @@ function renderTabela(){
   const timestampsHistorico = Object.keys(historico).sort((a,b) => a - b);
 
   for(const n of notasFiltradas){
-    // ====== LÓGICA DE RECORRÊNCIA (A MÁGICA AQUI) ======
-    let aparicoes = 0;
-    let timestampPrimeiraAparicao = null;
-    const chaveUnicaDaNota = getNotaKey(n);
+    let htmlRecorrencia = "";
+    let textoRecorrenciaExport = "";
 
-    timestampsHistorico.forEach(tsStr => {
-      // Se essa nota existia na importação desse dia do histórico...
-      if(historico[tsStr].some(hx => getNotaKey(hx) === chaveUnicaDaNota)) {
-         aparicoes++;
-         if(!timestampPrimeiraAparicao) timestampPrimeiraAparicao = parseInt(tsStr); // Guarda a data mais antiga
-      }
-    });
+    // ====== LÓGICA DE RECORRÊNCIA (AJUSTADA) ======
+    // Só pesquisa no histórico se a nota estiver VENCIDA (fora do prazo)
+    if (n.status === "vencido") {
+        let aparicoes = 0;
+        let timestampPrimeiraAparicao = null;
+        const chaveUnicaDaNota = getNotaKey(n);
 
-    // Se só apareceu 1 vez (hoje) é "Nova". Senão, mostra há quantas importações ela se repete.
-    let htmlRecorrencia = `<span class="badge" style="background:#dcfce7; color:#166534">✨ Nova</span>`;
-    let textoRecorrenciaExport = "Nova";
-    
-    if(aparicoes > 1 && timestampPrimeiraAparicao) {
-      const dataBr = new Date(timestampPrimeiraAparicao).toLocaleDateString("pt-BR");
-      htmlRecorrencia = `<span class="badge" style="background:#fee2e2; color:#991b1b" title="Presente desde ${dataBr}">📌 ${aparicoes}x seguidas</span>`;
-      textoRecorrenciaExport = `${aparicoes}x (Desde ${dataBr})`;
+        timestampsHistorico.forEach(tsStr => {
+          // Se essa nota existia na importação desse dia do histórico...
+          if(historico[tsStr].some(hx => getNotaKey(hx) === chaveUnicaDaNota)) {
+             aparicoes++;
+             if(!timestampPrimeiraAparicao) timestampPrimeiraAparicao = parseInt(tsStr); 
+          }
+        });
+
+        if(aparicoes > 1 && timestampPrimeiraAparicao) {
+          const dataBr = new Date(timestampPrimeiraAparicao).toLocaleDateString("pt-BR");
+          htmlRecorrencia = `<span class="badge" style="background:#fee2e2; color:#991b1b" title="Presente desde ${dataBr}">📌 ${aparicoes}x seguidas</span>`;
+          textoRecorrenciaExport = `${aparicoes}x (Desde ${dataBr})`;
+        } else {
+          // Nota está vencida, mas é a primeira vez que importamos ela assim
+          htmlRecorrencia = `<span class="badge" style="background:#fef3c7; color:#92400e">⚠️ 1ª vez vencida</span>`;
+          textoRecorrenciaExport = "1ª vez vencida";
+        }
+    } else {
+        // Se for OK ou Alerta, a nota ainda está no prazo. Não precisa de histórico.
+        htmlRecorrencia = `<span class="badge" style="background:#f3f4f6; color:#374151">⏳ No prazo</span>`;
+        textoRecorrenciaExport = "No prazo";
     }
     
     // Salvo p/ o export PDF
     n.recorrenciaTexto = textoRecorrenciaExport; 
-    // ===================================================
+    // ===============================================
 
     const tr = document.createElement("tr");
     tr.className = n.status;
@@ -289,7 +299,8 @@ function renderTabela(){
       <td>${n.emissao ? n.emissao.toLocaleDateString("pt-BR") : ""}</td>
       <td><strong>${n.diasDesde}</strong></td>
       <td><span class="badge ${n.status}">${escapeHtml(n.statusIcon)} ${escapeHtml(n.statusLabel)}</span></td>
-      <td>${htmlRecorrencia}</td> <td><strong>${formatBRL(n.valor)}</strong></td>
+      <td>${htmlRecorrencia}</td>
+      <td><strong>${formatBRL(n.valor)}</strong></td>
     `;
 
     tr.addEventListener("click", ()=>{
