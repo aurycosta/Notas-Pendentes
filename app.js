@@ -16,9 +16,9 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // Estado Global
-let notas = []; // Notas do painel atual (puxadas do banco ou recém importadas)
+let notas = []; 
 let notasFiltradas = [];
-let historico = {}; // Guarda { "timestamp_da_importacao": [array de notas] }
+let historico = {}; 
 
 const $ = (id) => document.getElementById(id);
 
@@ -46,14 +46,12 @@ const telaHistorico = $("telaHistorico");
 
 let chartQtd, chartValor;
 
-// ===== Carregamento Inicial (O F5 NÃO APAGA MAIS) =====
+// ===== Carregamento Inicial =====
 window.addEventListener("DOMContentLoaded", () => {
-  // Vamos usar um novo nó no banco chamado "painel_persistente" para não bagunçar testes anteriores
   get(ref(db, 'painel_persistente')).then((snapshot) => {
     if(snapshot.exists()) {
       const data = snapshot.val();
       
-      // 1. Restaura o estado atual (painel)
       if(data.estado_atual) {
         notas = data.estado_atual.map(n => ({
           ...n,
@@ -61,7 +59,6 @@ window.addEventListener("DOMContentLoaded", () => {
         }));
       }
       
-      // 2. Restaura todo o histórico de planilhas antigas
       if(data.historico) {
         historico = data.historico; 
       }
@@ -78,7 +75,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// ===== Trocar Abas (Painel <-> Histórico) =====
+// ===== Trocar Abas =====
 $("btnVerHistorico").addEventListener("click", () => {
   painelPrincipal.style.display = "none";
   telaHistorico.style.display = "block";
@@ -126,13 +123,14 @@ function diffDays(fromDate, toDate){
   return Math.floor((b - a) / (1000*60*60*24));
 }
 
+// ====== LÓGICA DE PRAZO CORRIGIDA (3 DIAS DE CARÊNCIA) ======
 function statusByDays(days){
-  if(days <= 1) return { key:"ok", label:"OK", icon:"✅" };
-  if(days <= 3) return { key:"alerta", label:"Alerta", icon:"⚠️" };
-  return { key:"vencido", label:`Vencido`, icon:"❌" };
+  if(days <= 2) return { key:"ok", label:"OK", icon:"✅", atraso: 0 };
+  if(days === 3) return { key:"alerta", label:"Alerta", icon:"⚠️", atraso: 0 };
+  // Se passou de 3 dias, calcula quantos dias REAIS de atraso existem
+  return { key:"vencido", label:`Vencido`, icon:"❌", atraso: days - 3 }; 
 }
 
-// Chave unificada para ter precisão de rastrear notas repetidas no histórico
 function getNotaKey(n) {
   if (n.chave && String(n.chave).trim() !== "") return String(n.chave).trim();
   return `${n.nfe}_${n.origem}_${n.destino}`;
@@ -167,26 +165,24 @@ fileInput.addEventListener("change", (e)=>{
       periodo: String(r[9] ?? "").trim(),
     })).filter(n => n.origem || n.destino || n.nfe);
 
-    // Preparar para salvar no Firebase (converte datas para número)
     const timestampAgora = Date.now();
     const notasParaSalvar = notas.map(n => ({
       ...n,
       emissao: n.emissao ? n.emissao.getTime() : null
     }));
 
-    // Gravamos simultaneamente: 1) Substituímos o painel atual e 2) Criamos uma cópia no Histórico
     const updates = {};
     updates['painel_persistente/estado_atual'] = notasParaSalvar;
     updates[`painel_persistente/historico/${timestampAgora}`] = notasParaSalvar;
 
     update(ref(db), updates).then(() => {
        toast("Importação concluída e salva no Histórico!");
-       historico[timestampAgora] = notasParaSalvar; // Sincroniza memória local
+       historico[timestampAgora] = notasParaSalvar;
        
        dataRef.value = todayISO();
        carregarFiltroLojas();
        aplicarEAtualizar();
-       fileInput.value = ""; // limpa o input
+       fileInput.value = ""; 
     }).catch(err => {
        console.error(err);
        toast("Erro ao gravar dados no Firebase!");
@@ -205,7 +201,7 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-// ===== Filtros & Renderização Painel =====
+// ===== Filtros & Renderização =====
 [filtroLoja, filtroStatus, dataRef, busca].forEach(el=>{
   el.addEventListener("input", aplicarEAtualizar);
 });
@@ -218,11 +214,25 @@ function aplicarEAtualizar(){
 
   notasFiltradas = notas.map(n=>{
     const daysDesde = n.emissao ? diffDays(n.emissao, refDate) : null;
-    const s = (daysDesde === null) ? { key:"vencido", label:"Sem data", icon:"❓" } : statusByDays(daysDesde);
+    const s = (daysDesde === null) ? { key:"vencido", label:"Sem data", icon:"❓", atraso: 0 } : statusByDays(daysDesde);
+
+    // ====== CRIAÇÃO DO TEXTO INTELIGENTE DA COLUNA "DIAS" ======
+    let textoDias = "";
+    if (daysDesde === null) {
+      textoDias = "-";
+    } else if (s.key === "vencido") {
+      // Aqui usamos a nova matemática (days - 3)
+      textoDias = `${s.atraso} dia(s) vencida`; 
+    } else {
+      // Se ainda for OK ou Alerta, mostra apenas quantos dias correram do prazo
+      textoDias = `${daysDesde} dia(s)`; 
+    }
 
     return {
       ...n,
       diasDesde: daysDesde ?? "",
+      atraso: s.atraso,
+      textoDias: textoDias, // Exportado para a tabela e pro PDF
       status: s.key,
       statusLabel: s.label,
       statusIcon: s.icon
@@ -246,22 +256,18 @@ function aplicarEAtualizar(){
 function renderTabela(){
   tabelaBody.innerHTML = "";
   
-  // Array de datas do histórico, ordenadas da mais antiga (0) para a mais recente
   const timestampsHistorico = Object.keys(historico).sort((a,b) => a - b);
 
   for(const n of notasFiltradas){
     let htmlRecorrencia = "";
     let textoRecorrenciaExport = "";
 
-    // ====== LÓGICA DE RECORRÊNCIA (AJUSTADA) ======
-    // Só pesquisa no histórico se a nota estiver VENCIDA (fora do prazo)
     if (n.status === "vencido") {
         let aparicoes = 0;
         let timestampPrimeiraAparicao = null;
         const chaveUnicaDaNota = getNotaKey(n);
 
         timestampsHistorico.forEach(tsStr => {
-          // Se essa nota existia na importação desse dia do histórico...
           if(historico[tsStr].some(hx => getNotaKey(hx) === chaveUnicaDaNota)) {
              aparicoes++;
              if(!timestampPrimeiraAparicao) timestampPrimeiraAparicao = parseInt(tsStr); 
@@ -273,19 +279,15 @@ function renderTabela(){
           htmlRecorrencia = `<span class="badge" style="background:#fee2e2; color:#991b1b" title="Presente desde ${dataBr}">📌 ${aparicoes}x seguidas</span>`;
           textoRecorrenciaExport = `${aparicoes}x (Desde ${dataBr})`;
         } else {
-          // Nota está vencida, mas é a primeira vez que importamos ela assim
           htmlRecorrencia = `<span class="badge" style="background:#fef3c7; color:#92400e">⚠️ 1ª vez vencida</span>`;
           textoRecorrenciaExport = "1ª vez vencida";
         }
     } else {
-        // Se for OK ou Alerta, a nota ainda está no prazo. Não precisa de histórico.
         htmlRecorrencia = `<span class="badge" style="background:#f3f4f6; color:#374151">⏳ No prazo</span>`;
         textoRecorrenciaExport = "No prazo";
     }
     
-    // Salvo p/ o export PDF
     n.recorrenciaTexto = textoRecorrenciaExport; 
-    // ===============================================
 
     const tr = document.createElement("tr");
     tr.className = n.status;
@@ -297,9 +299,9 @@ function renderTabela(){
       <td>${escapeHtml(n.nfe)}</td>
       <td>${escapeHtml(n.serie)}</td>
       <td>${n.emissao ? n.emissao.toLocaleDateString("pt-BR") : ""}</td>
-      <td><strong>${n.diasDesde}</strong></td>
+      <td><strong>${n.textoDias}</strong></td>
       <td><span class="badge ${n.status}">${escapeHtml(n.statusIcon)} ${escapeHtml(n.statusLabel)}</span></td>
-      <td>${htmlRecorrencia}</td>
+      <td>${htmlRecorrencia}</td> 
       <td><strong>${formatBRL(n.valor)}</strong></td>
     `;
 
@@ -312,7 +314,7 @@ function renderTabela(){
         "Série": n.serie,
         "Chave de Acesso": n.chave,
         "Data de Emissão": n.emissao ? n.emissao.toLocaleDateString("pt-BR") : "",
-        "Dias Pendentes": n.diasDesde,
+        "Situação do Prazo": n.textoDias,
         "Status": n.statusLabel,
         "Análise de Recorrência": textoRecorrenciaExport,
         "Valor": formatBRL(n.valor)
@@ -324,7 +326,7 @@ function renderTabela(){
   }
 }
 
-// ===== Lógica de Renderizar Aba do Histórico ======
+// ===== Aba de Histórico ======
 function renderHistoricoDatas() {
    const ul = $("ulHistoricoDatas");
    const tbodyDet = $("tabelaDetHist").querySelector("tbody");
@@ -333,7 +335,6 @@ function renderHistoricoDatas() {
    tbodyDet.innerHTML = "";
    $("tituloDetalheHist").textContent = "Selecione uma importação na lista";
 
-   // Pegamos as chaves, mas invertemos para mostrar as importações mais recentes no TOPO
    const chavesDesc = Object.keys(historico).sort((a,b) => b - a);
 
    if(chavesDesc.length === 0) {
@@ -464,8 +465,8 @@ function exportPDF(titulo, rows){
   const arr = rows.map(n=>[
     n.origem, n.destino, n.nfe,
     n.emissao ? n.emissao.toLocaleDateString("pt-BR") : "",
-    String(n.diasDesde), n.statusLabel,
-    n.recorrenciaTexto || "Nova", // Incluí no PDF a recorrência também!
+    n.textoDias, n.statusLabel,
+    n.recorrenciaTexto || "Nova", 
     formatBRL(n.valor)
   ]);
 
