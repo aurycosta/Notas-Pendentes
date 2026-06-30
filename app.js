@@ -16,9 +16,9 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // Estado Global
-let notas = []; 
+let notas = []; // Notas do painel atual (puxadas do banco ou recém importadas)
 let notasFiltradas = [];
-let historico = {}; 
+let historico = {}; // Guarda { "timestamp_da_importacao": [array de notas] }
 
 const $ = (id) => document.getElementById(id);
 
@@ -46,12 +46,13 @@ const telaHistorico = $("telaHistorico");
 
 let chartQtd, chartValor;
 
-// ===== Carregamento Inicial =====
+// ===== Carregamento Inicial (O F5 NÃO APAGA MAIS) =====
 window.addEventListener("DOMContentLoaded", () => {
   get(ref(db, 'painel_persistente')).then((snapshot) => {
     if(snapshot.exists()) {
       const data = snapshot.val();
       
+      // 1. Restaura o estado atual (painel)
       if(data.estado_atual) {
         notas = data.estado_atual.map(n => ({
           ...n,
@@ -59,6 +60,7 @@ window.addEventListener("DOMContentLoaded", () => {
         }));
       }
       
+      // 2. Restaura todo o histórico de planilhas antigas
       if(data.historico) {
         historico = data.historico; 
       }
@@ -75,7 +77,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// ===== Trocar Abas =====
+// ===== Trocar Abas (Painel <-> Histórico) =====
 $("btnVerHistorico").addEventListener("click", () => {
   painelPrincipal.style.display = "none";
   telaHistorico.style.display = "block";
@@ -123,11 +125,10 @@ function diffDays(fromDate, toDate){
   return Math.floor((b - a) / (1000*60*60*24));
 }
 
-// ====== LÓGICA DE PRAZO CORRIGIDA (3 DIAS DE CARÊNCIA) ======
+// ====== LÓGICA DE PRAZO (3 DIAS DE CARÊNCIA) ======
 function statusByDays(days){
   if(days <= 2) return { key:"ok", label:"OK", icon:"✅", atraso: 0 };
   if(days === 3) return { key:"alerta", label:"Alerta", icon:"⚠️", atraso: 0 };
-  // Se passou de 3 dias, calcula quantos dias REAIS de atraso existem
   return { key:"vencido", label:`Vencido`, icon:"❌", atraso: days - 3 }; 
 }
 
@@ -216,15 +217,12 @@ function aplicarEAtualizar(){
     const daysDesde = n.emissao ? diffDays(n.emissao, refDate) : null;
     const s = (daysDesde === null) ? { key:"vencido", label:"Sem data", icon:"❓", atraso: 0 } : statusByDays(daysDesde);
 
-    // ====== CRIAÇÃO DO TEXTO INTELIGENTE DA COLUNA "DIAS" ======
     let textoDias = "";
     if (daysDesde === null) {
       textoDias = "-";
     } else if (s.key === "vencido") {
-      // Aqui usamos a nova matemática (days - 3)
       textoDias = `${s.atraso} dia(s) vencida`; 
     } else {
-      // Se ainda for OK ou Alerta, mostra apenas quantos dias correram do prazo
       textoDias = `${daysDesde} dia(s)`; 
     }
 
@@ -232,7 +230,7 @@ function aplicarEAtualizar(){
       ...n,
       diasDesde: daysDesde ?? "",
       atraso: s.atraso,
-      textoDias: textoDias, // Exportado para a tabela e pro PDF
+      textoDias: textoDias, 
       status: s.key,
       statusLabel: s.label,
       statusIcon: s.icon
@@ -262,23 +260,52 @@ function renderTabela(){
     let htmlRecorrencia = "";
     let textoRecorrenciaExport = "";
 
+    // ====== LÓGICA MÁSTER DE RECORRÊNCIA CORRIGIDA ======
     if (n.status === "vencido") {
-        let aparicoes = 0;
+        // Usamos um Set (conjunto) para armazenar apenas datas únicas (ex: "20/06/2026")
+        // Isso evita duplicar a contagem caso você importe 2 planilhas no mesmo dia.
+        const diasUnicosVencida = new Set();
         let timestampPrimeiraAparicao = null;
         const chaveUnicaDaNota = getNotaKey(n);
 
         timestampsHistorico.forEach(tsStr => {
-          if(historico[tsStr].some(hx => getNotaKey(hx) === chaveUnicaDaNota)) {
-             aparicoes++;
-             if(!timestampPrimeiraAparicao) timestampPrimeiraAparicao = parseInt(tsStr); 
+          const notaNoHist = historico[tsStr].find(hx => getNotaKey(hx) === chaveUnicaDaNota);
+          
+          if(notaNoHist) {
+             const dataDaImportacao = new Date(parseInt(tsStr));
+             const dataStrLocal = dataDaImportacao.toLocaleDateString("pt-BR");
+             
+             // Descobre se a nota já estava vencida LÁ NO PASSADO no momento dessa importação antiga
+             const em = notaNoHist.emissao ? new Date(notaNoHist.emissao) : null;
+             let eraVencidaNaEpoca = false;
+             
+             if (em) {
+                if (diffDays(em, dataDaImportacao) > 3) {
+                    eraVencidaNaEpoca = true;
+                }
+             } else {
+                eraVencidaNaEpoca = true; // Se não tem emissão, consideramos vencida
+             }
+
+             // Se ELA ESTAVA VENCIDA naquela importação, adicionamos o dia na contagem
+             if (eraVencidaNaEpoca) {
+                diasUnicosVencida.add(dataStrLocal);
+                if(!timestampPrimeiraAparicao) timestampPrimeiraAparicao = parseInt(tsStr); 
+             }
           }
         });
 
-        if(aparicoes > 1 && timestampPrimeiraAparicao) {
+        // O total de repetições é o total de dias únicos menos 1 (já que o 1º dia não é repetição)
+        const repeticoes = diasUnicosVencida.size - 1;
+
+        if(repeticoes > 0) {
           const dataBr = new Date(timestampPrimeiraAparicao).toLocaleDateString("pt-BR");
-          htmlRecorrencia = `<span class="badge" style="background:#fee2e2; color:#991b1b" title="Presente desde ${dataBr}">📌 ${aparicoes}x seguidas</span>`;
-          textoRecorrenciaExport = `${aparicoes}x (Desde ${dataBr})`;
+          const txtVezes = repeticoes === 1 ? "1x seguida" : `${repeticoes}x seguidas`;
+          
+          htmlRecorrencia = `<span class="badge" style="background:#fee2e2; color:#991b1b" title="Vencida desde ${dataBr}">📌 ${txtVezes}</span>`;
+          textoRecorrenciaExport = txtVezes;
         } else {
+          // Se "repeticoes" for 0, significa que o único dia em que ela apareceu vencida foi hoje!
           htmlRecorrencia = `<span class="badge" style="background:#fef3c7; color:#92400e">⚠️ 1ª vez vencida</span>`;
           textoRecorrenciaExport = "1ª vez vencida";
         }
@@ -288,6 +315,7 @@ function renderTabela(){
     }
     
     n.recorrenciaTexto = textoRecorrenciaExport; 
+    // =======================================================
 
     const tr = document.createElement("tr");
     tr.className = n.status;
